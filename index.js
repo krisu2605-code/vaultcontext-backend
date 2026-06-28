@@ -133,7 +133,7 @@ app.get("/watch", async (req, res) => {
     const syncToken = initialList.data.nextSyncToken;
 
     // A unique channel ID for this watch.
-    const channelId = "vc-" + userEmail + "-" + Date.now();
+    const channelId = "vc-" + Date.now() + "-" + Math.floor(Math.random() * 100000);
 
     // Tell Google to send change notifications to our /notifications route.
     const watchResponse = await calendar.events.watch({
