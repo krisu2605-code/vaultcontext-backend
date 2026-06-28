@@ -32,9 +32,11 @@ function formatTime(iso) {
   }
 }
 // --- Helper: send a conflict alert email ---
-async function sendConflictEmail(toEmail, conflict) {
+async function sendConflictEmail(toEmail, conflict, conflictId) {
   try {
-    const resolveLink = "https://vaultcontext-backend.onrender.com"; // placeholder — will point to your web app later
+    const resolveLink = conflictId
+  ? `https://vaultcontext.online/resolve?conflictRef=${conflictId}`
+  : "https://vaultcontext.online";
 
     const { data, error } = await resend.emails.send({
       from: "VaultContext <onboarding@resend.dev>",
@@ -389,13 +391,47 @@ app.post("/notifications", async (req, res) => {
       const result = detectConflict(newEvent, existingEvents);
 
       if (result.conflict_detected) {
-        console.log("⚠️ CONFLICT DETECTED!");
-        console.log(`  ${result.new_event} (${result.new_start})`);
-        console.log(`  overlaps ${result.conflict_with} by ${result.overlap_minutes} min`);
-        await sendConflictEmail(userEmail, result);
+  console.log("⚠️ CONFLICT DETECTED!");
+  console.log(`  ${result.new_event} (${result.new_start})`);
+  console.log(`  overlaps ${result.conflict_with} by ${result.overlap_minutes} min`);
+
+  // Look up this user's auth UUID so we can save to conflicts table
+  const { data: authData, error: authLookupError } = await supabase.auth.admin.listUsers();
+  if (authLookupError) {
+    console.error("Auth user lookup failed:", authLookupError.message);
+    await sendConflictEmail(userEmail, result, null);
+  } else {
+    const authUser = authData?.users?.find(u => u.email === userEmail);
+    if (!authUser) {
+      console.error("No auth user found for email:", userEmail);
+      await sendConflictEmail(userEmail, result, null);
+    } else {
+      // Save conflict to DB and capture the generated id
+      const { data: inserted, error: insertError } = await supabase
+        .from("conflicts")
+        .insert({
+          user_id: authUser.id,
+          user_email: userEmail,
+          task_name: result.new_event,
+          clash_event: `Overlaps "${result.conflict_with}" by ${result.overlap_minutes} min`,
+          deadline: result.new_start,
+          is_resolved: false,
+        })
+        .select("id")
+        .single();
+
+      if (insertError) {
+        console.error("Failed to save conflict to DB:", insertError.message);
+        await sendConflictEmail(userEmail, result, null);
       } else {
-        console.log("✓ No conflict for", changed.summary);
+        console.log("✅ Conflict saved to DB, id:", inserted.id);
+        await sendConflictEmail(userEmail, result, inserted.id);
       }
+    }
+  }
+} else {
+  console.log("✓ No conflict for", changed.summary);
+}
     }
   } catch (err) {
     console.error("Error fetching changes:", err.message);
