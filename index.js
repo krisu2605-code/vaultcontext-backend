@@ -171,18 +171,93 @@ app.get("/watch", async (req, res) => {
   }
 });
 
-// --- Phase 3b: Receive notifications from Google ---
-app.post("/notifications", (req, res) => {
-  // Google sends details in the request headers.
+// --- Phase 4: Receive notification and fetch what changed ---
+app.post("/notifications", async (req, res) => {
   const channelId = req.headers["x-goog-channel-id"];
   const resourceState = req.headers["x-goog-resource-state"];
 
-  console.log("=== NOTIFICATION RECEIVED ===");
-  console.log("Channel ID:", channelId);
-  console.log("Resource State:", resourceState);
-
-  // Always respond 200 quickly so Google knows we got it.
+  // Respond 200 immediately so Google knows we received it.
   res.status(200).send("OK");
+
+  // Google sends a "sync" ping right after watch setup — ignore it.
+  if (resourceState === "sync") {
+    console.log("Sync notification received, ignoring.");
+    return;
+  }
+
+  console.log("=== CHANGE NOTIFICATION ===");
+  console.log("Channel ID:", channelId);
+
+  try {
+    // 1. Find which user this channel belongs to.
+    const { data: connection, error: lookupError } = await supabase
+      .from("calendar_connections")
+      .select("*")
+      .eq("watch_channel_id", channelId)
+      .single();
+
+    if (lookupError || !connection) {
+      console.error("No user found for channel:", channelId);
+      return;
+    }
+
+    const userEmail = connection.user_email;
+    console.log("Belongs to user:", userEmail);
+
+    // 2. Build an authed Google client (auto-refreshes the token).
+    const oauth2Client = makeOAuthClient();
+    oauth2Client.setCredentials({
+      access_token: connection.google_access_token,
+      refresh_token: connection.google_refresh_token,
+    });
+
+    // If the library refreshes the token, save the new one back.
+    oauth2Client.on("tokens", async (newTokens) => {
+      if (newTokens.access_token) {
+        await supabase
+          .from("calendar_connections")
+          .update({
+            google_access_token: newTokens.access_token,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("user_email", userEmail);
+        console.log("Access token refreshed and saved.");
+      }
+    });
+
+    const calendar = google.calendar({ version: "v3", auth: oauth2Client });
+
+    // 3. Use the stored sync token to fetch ONLY what changed.
+    const listResult = await calendar.events.list({
+      calendarId: "primary",
+      syncToken: connection.sync_token,
+    });
+
+    const changedEvents = listResult.data.items || [];
+
+    // 4. Save the new sync token for next time.
+    if (listResult.data.nextSyncToken) {
+      await supabase
+        .from("calendar_connections")
+        .update({
+          sync_token: listResult.data.nextSyncToken,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("user_email", userEmail);
+    }
+
+    // 5. Log what changed (for now — conflict logic comes next).
+    console.log("Number of changed events:", changedEvents.length);
+    changedEvents.forEach((ev) => {
+      console.log("---");
+      console.log("Title:", ev.summary);
+      console.log("Start:", ev.start ? ev.start.dateTime || ev.start.date : "none");
+      console.log("End:", ev.end ? ev.end.dateTime || ev.end.date : "none");
+      console.log("Status:", ev.status);
+    });
+  } catch (err) {
+    console.error("Error fetching changes:", err.message);
+  }
 });
 
 
