@@ -10,7 +10,45 @@ const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_SERVICE_KEY
 );
+// --- Resend email client ---
+const { Resend } = require("resend");
+const resend = new Resend(process.env.RESEND_API_KEY);
 
+// --- Helper: send a conflict alert email ---
+async function sendConflictEmail(toEmail, conflict) {
+  try {
+    const resolveLink = "https://vaultcontext-backend.onrender.com"; // placeholder — will point to your web app later
+
+    const { data, error } = await resend.emails.send({
+      from: "VaultContext <onboarding@resend.dev>",
+      to: toEmail,
+      subject: `⚠️ Calendar Conflict: ${conflict.new_event} overlaps ${conflict.conflict_with}`,
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 500px; margin: 0 auto;">
+          <h2 style="color: #d97706;">Calendar Conflict Detected</h2>
+          <p>Two of your events overlap:</p>
+          <div style="background: #f3f4f6; border-radius: 8px; padding: 16px; margin: 16px 0;">
+            <p style="margin: 0 0 8px;"><strong>${conflict.new_event}</strong><br/>
+            ${conflict.new_start} → ${conflict.new_end}</p>
+            <p style="margin: 0; color: #6b7280;">overlaps with</p>
+            <p style="margin: 8px 0 0;"><strong>${conflict.conflict_with}</strong><br/>
+            ${conflict.existing_start} → ${conflict.existing_end}</p>
+          </div>
+          <p style="color: #6b7280;">Overlap: <strong>${conflict.overlap_minutes} minutes</strong></p>
+          <a href="${resolveLink}" style="display: inline-block; background: #2563eb; color: white; padding: 10px 20px; border-radius: 6px; text-decoration: none; margin-top: 8px;">Resolve Conflict</a>
+        </div>
+      `,
+    });
+
+    if (error) {
+      console.error("Email send error:", error);
+    } else {
+      console.log("Conflict alert email sent to", toEmail);
+    }
+  } catch (err) {
+    console.error("Email send exception:", err.message);
+  }
+}
 // --- Helper: build a fresh Google OAuth client from our env vars ---
 function makeOAuthClient() {
   return new google.auth.OAuth2(
@@ -337,7 +375,7 @@ app.post("/notifications", async (req, res) => {
         console.log("⚠️ CONFLICT DETECTED!");
         console.log(`  ${result.new_event} (${result.new_start})`);
         console.log(`  overlaps ${result.conflict_with} by ${result.overlap_minutes} min`);
-        // NEXT STEP: send the alert email here.
+        await sendConflictEmail(userEmail, result);
       } else {
         console.log("✓ No conflict for", changed.summary);
       }
