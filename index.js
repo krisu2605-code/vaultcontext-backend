@@ -14,6 +14,23 @@ const supabase = createClient(
 const { Resend } = require("resend");
 const resend = new Resend(process.env.RESEND_API_KEY);
 
+// --- Helper: format an ISO timestamp into a readable string ---
+function formatTime(iso) {
+  try {
+    const d = new Date(iso);
+    return d.toLocaleString("en-US", {
+      weekday: "short",
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+      timeZone: "Asia/Bangkok", // Hanoi / Vietnam time (+07:00)
+    });
+  } catch {
+    return iso; // fall back to raw if anything goes wrong
+  }
+}
 // --- Helper: send a conflict alert email ---
 async function sendConflictEmail(toEmail, conflict) {
   try {
@@ -29,10 +46,10 @@ async function sendConflictEmail(toEmail, conflict) {
           <p>Two of your events overlap:</p>
           <div style="background: #f3f4f6; border-radius: 8px; padding: 16px; margin: 16px 0;">
             <p style="margin: 0 0 8px;"><strong>${conflict.new_event}</strong><br/>
-            ${conflict.new_start} → ${conflict.new_end}</p>
+            ${formatTime(conflict.new_start)} → ${formatTime(conflict.new_end)}</p>
             <p style="margin: 0; color: #6b7280;">overlaps with</p>
             <p style="margin: 8px 0 0;"><strong>${conflict.conflict_with}</strong><br/>
-            ${conflict.existing_start} → ${conflict.existing_end}</p>
+            ${formatTime(conflict.existing_start)} → ${formatTime(conflict.existing_end)}</p>
           </div>
           <p style="color: #6b7280;">Overlap: <strong>${conflict.overlap_minutes} minutes</strong></p>
           <a href="${resolveLink}" style="display: inline-block; background: #2563eb; color: white; padding: 10px 20px; border-radius: 6px; text-decoration: none; margin-top: 8px;">Resolve Conflict</a>
