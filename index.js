@@ -112,7 +112,47 @@ async function getAuthedClientForUser(userEmail) {
 
   return { oauth2Client, connection: data };
 }
+// --- The deterministic conflict engine ---
+// Pure math. Same input → same output. Timezone-safe (works on UTC ms).
+function detectConflict(newEvent, existingEvents) {
+  const newStart = new Date(newEvent.startISO).getTime();
+  const newEnd = new Date(newEvent.endISO).getTime();
 
+  if (isNaN(newStart) || isNaN(newEnd)) {
+    return { conflict_detected: false, error: "Invalid new event timestamps" };
+  }
+
+  const WINDOW_MIN = 30; // minimum overlap (minutes) that counts as a conflict
+
+  for (const ev of existingEvents) {
+    // Skip the event matching itself.
+    if (ev.id && newEvent.id && ev.id === newEvent.id) continue;
+
+    const evStart = new Date(ev.startISO).getTime();
+    const evEnd = new Date(ev.endISO).getTime();
+    if (isNaN(evStart) || isNaN(evEnd)) continue;
+
+    // Core math: overlap = later start to earlier end.
+    const overlapStart = Math.max(newStart, evStart);
+    const overlapEnd = Math.min(newEnd, evEnd);
+    const overlapMinutes = (overlapEnd - overlapStart) / (1000 * 60);
+
+    if (overlapMinutes >= WINDOW_MIN) {
+      return {
+        conflict_detected: true,
+        conflict_with: ev.title || "Untitled Event",
+        overlap_minutes: Math.round(overlapMinutes),
+        new_event: newEvent.title,
+        new_start: newEvent.startISO,
+        new_end: newEvent.endISO,
+        existing_start: ev.startISO,
+        existing_end: ev.endISO,
+      };
+    }
+  }
+
+  return { conflict_detected: false };
+}
 // --- Phase 3a: Register a watch on the user's calendar ---
 app.get("/watch", async (req, res) => {
   const userEmail = req.query.email;
@@ -246,15 +286,62 @@ app.post("/notifications", async (req, res) => {
         .eq("user_email", userEmail);
     }
 
-    // 5. Log what changed (for now — conflict logic comes next).
-    console.log("Number of changed events:", changedEvents.length);
-    changedEvents.forEach((ev) => {
-      console.log("---");
-      console.log("Title:", ev.summary);
-      console.log("Start:", ev.start ? ev.start.dateTime || ev.start.date : "none");
-      console.log("End:", ev.end ? ev.end.dateTime || ev.end.date : "none");
-      console.log("Status:", ev.status);
-    });
+    // 5. For each changed event, check for conflicts.
+    for (const changed of changedEvents) {
+      // Skip cancelled events.
+      if (changed.status === "cancelled") continue;
+
+      // Get the changed event's start/end in ISO form.
+      const changedStart = changed.start
+        ? changed.start.dateTime || changed.start.date
+        : null;
+      const changedEnd = changed.end
+        ? changed.end.dateTime || changed.end.date
+        : null;
+
+      if (!changedStart || !changedEnd) continue;
+
+      console.log("Checking conflicts for:", changed.summary);
+
+      // Search the calendar AROUND this event's time (its own date window).
+      const windowStart = new Date(new Date(changedStart).getTime() - 60 * 60 * 1000);
+      const windowEnd = new Date(new Date(changedEnd).getTime() + 60 * 60 * 1000);
+
+      const nearby = await calendar.events.list({
+        calendarId: "primary",
+        timeMin: windowStart.toISOString(),
+        timeMax: windowEnd.toISOString(),
+        singleEvents: true,
+        orderBy: "startTime",
+      });
+
+      // Shape the events for the engine.
+      const existingEvents = (nearby.data.items || []).map((ev) => ({
+        id: ev.id,
+        title: ev.summary,
+        startISO: ev.start ? ev.start.dateTime || ev.start.date : null,
+        endISO: ev.end ? ev.end.dateTime || ev.end.date : null,
+      }));
+
+      const newEvent = {
+        id: changed.id,
+        title: changed.summary,
+        startISO: changedStart,
+        endISO: changedEnd,
+      };
+
+      // Run the deterministic engine.
+      const result = detectConflict(newEvent, existingEvents);
+
+      if (result.conflict_detected) {
+        console.log("⚠️ CONFLICT DETECTED!");
+        console.log(`  ${result.new_event} (${result.new_start})`);
+        console.log(`  overlaps ${result.conflict_with} by ${result.overlap_minutes} min`);
+        // NEXT STEP: send the alert email here.
+      } else {
+        console.log("✓ No conflict for", changed.summary);
+      }
+    }
   } catch (err) {
     console.error("Error fetching changes:", err.message);
   }
