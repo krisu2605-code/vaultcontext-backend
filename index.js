@@ -145,9 +145,17 @@ app.get("/oauth/callback", async (req, res) => {
       return res.status(500).send("Failed to save calendar connection.");
     }
 
-    res.send(
-      `Calendar connected successfully for ${userEmail}. You can close this tab.`
-    );
+    // Auto-register the watch so notifications start immediately
+    try {
+      await registerWatch(userEmail);
+      console.log("✅ OAuth + watch complete for", userEmail);
+    } catch (watchErr) {
+      console.error("Watch registration failed:", watchErr.message);
+      // Don't block the redirect — tokens are saved, watch can be retried
+    }
+
+    // Redirect back to the app
+    res.redirect("https://vaultcontext.online/mobileSettings");
   } catch (err) {
     console.error("OAuth callback error:", err);
     res.status(500).send("Something went wrong connecting your calendar.");
@@ -232,6 +240,47 @@ function detectConflict(newEvent, existingEvents) {
 
   return { conflict_detected: false };
 }
+// --- Helper: register a Google Calendar push notification watch ---
+async function registerWatch(userEmail) {
+  const { oauth2Client } = await getAuthedClientForUser(userEmail);
+  const calendar = google.calendar({ version: "v3", auth: oauth2Client });
+
+  const initialList = await calendar.events.list({
+    calendarId: "primary",
+    timeMin: new Date().toISOString(),
+    singleEvents: true,
+  });
+  const syncToken = initialList.data.nextSyncToken;
+
+  const channelId = "vc-" + Date.now() + "-" + Math.floor(Math.random() * 100000);
+
+  const watchResponse = await calendar.events.watch({
+    calendarId: "primary",
+    requestBody: {
+      id: channelId,
+      type: "web_hook",
+      address: "https://vaultcontext-backend.onrender.com/notifications",
+    },
+  });
+
+  const { error } = await supabase
+    .from("calendar_connections")
+    .update({
+      watch_channel_id: channelId,
+      watch_resource_id: watchResponse.data.resourceId,
+      watch_expiration: watchResponse.data.expiration
+        ? new Date(Number(watchResponse.data.expiration)).toISOString()
+        : null,
+      sync_token: syncToken,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("user_email", userEmail);
+
+  if (error) throw new Error("Failed to save watch details: " + error.message);
+
+  console.log("✅ Watch registered for", userEmail, "channel:", channelId);
+  return channelId;
+}
 // --- Phase 3a: Register a watch on the user's calendar ---
 app.get("/watch", async (req, res) => {
   const userEmail = req.query.email;
@@ -240,49 +289,7 @@ app.get("/watch", async (req, res) => {
   }
 
   try {
-    const { oauth2Client } = await getAuthedClientForUser(userEmail);
-    const calendar = google.calendar({ version: "v3", auth: oauth2Client });
-
-    // First, do an initial sync to capture a starting syncToken.
-    const initialList = await calendar.events.list({
-      calendarId: "primary",
-      timeMin: new Date().toISOString(),
-      singleEvents: true,
-    });
-    const syncToken = initialList.data.nextSyncToken;
-
-    // A unique channel ID for this watch.
-    const channelId = "vc-" + Date.now() + "-" + Math.floor(Math.random() * 100000);
-
-    // Tell Google to send change notifications to our /notifications route.
-    const watchResponse = await calendar.events.watch({
-      calendarId: "primary",
-      requestBody: {
-        id: channelId,
-        type: "web_hook",
-        address: "https://vaultcontext-backend.onrender.com/notifications",
-      },
-    });
-
-    // Save the watch details so we can match notifications back to this user.
-    const { error } = await supabase
-      .from("calendar_connections")
-      .update({
-        watch_channel_id: channelId,
-        watch_resource_id: watchResponse.data.resourceId,
-        watch_expiration: watchResponse.data.expiration
-          ? new Date(Number(watchResponse.data.expiration)).toISOString()
-          : null,
-        sync_token: syncToken,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("user_email", userEmail);
-
-    if (error) {
-      console.error("Failed to save watch details:", error);
-      return res.status(500).send("Watch registered but failed to save.");
-    }
-
+    await registerWatch(userEmail);
     res.send("Watch registered successfully for " + userEmail);
   } catch (err) {
     console.error("Watch registration error:", err);
