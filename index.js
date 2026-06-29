@@ -41,7 +41,9 @@ async function sendConflictEmail(toEmail, conflict, conflictId) {
     const { data, error } = await resend.emails.send({
       from: "VaultContext <onboarding@resend.dev>",
       to: toEmail,
-      subject: `⚠️ Calendar Conflict: ${conflict.new_event} overlaps ${conflict.conflict_with}`,
+      subject: conflict.conflict_type === "overlap"
+  ? `⚠️ Calendar Conflict: ${conflict.new_event} overlaps ${conflict.conflict_with}`
+  : `⏱️ Tight Schedule: ${conflict.new_event} has under 60 min before ${conflict.conflict_with}`,
       html: `
         <div style="font-family: Arial, sans-serif; max-width: 500px; margin: 0 auto;">
           <h2 style="color: #d97706;">Calendar Conflict Detected</h2>
@@ -53,7 +55,10 @@ async function sendConflictEmail(toEmail, conflict, conflictId) {
             <p style="margin: 8px 0 0;"><strong>${conflict.conflict_with}</strong><br/>
             ${formatTime(conflict.existing_start)} → ${formatTime(conflict.existing_end)}</p>
           </div>
-          <p style="color: #6b7280;">Overlap: <strong>${conflict.overlap_minutes} minutes</strong></p>
+          <p style="color: #6b7280;">${conflict.conflict_type === "overlap"
+  ? `Overlap: <strong>${conflict.overlap_minutes} minutes</strong>`
+  : `Gap: <strong>${conflict.gap_minutes} min</strong> — under 60 min breathing room`
+}</p>
           <a href="${resolveLink}" style="display: inline-block; background: #2563eb; color: white; padding: 10px 20px; border-radius: 6px; text-decoration: none; margin-top: 8px;">Resolve Conflict</a>
         </div>
       `,
@@ -179,26 +184,43 @@ function detectConflict(newEvent, existingEvents) {
     return { conflict_detected: false, error: "Invalid new event timestamps" };
   }
 
-  const WINDOW_MIN = 30; // minimum overlap (minutes) that counts as a conflict
+  const OVERLAP_MIN = 30; // actual overlap threshold (minutes)
+  const BUFFER_MIN = 60;  // minimum breathing room between events (minutes)
 
   for (const ev of existingEvents) {
-    // Skip the event matching itself.
     if (ev.id && newEvent.id && ev.id === newEvent.id) continue;
 
     const evStart = new Date(ev.startISO).getTime();
     const evEnd = new Date(ev.endISO).getTime();
     if (isNaN(evStart) || isNaN(evEnd)) continue;
 
-    // Core math: overlap = later start to earlier end.
     const overlapStart = Math.max(newStart, evStart);
     const overlapEnd = Math.min(newEnd, evEnd);
     const overlapMinutes = (overlapEnd - overlapStart) / (1000 * 60);
 
-    if (overlapMinutes >= WINDOW_MIN) {
+    if (overlapMinutes >= OVERLAP_MIN) {
+      // Real overlap of 30+ min
       return {
         conflict_detected: true,
+        conflict_type: "overlap",
         conflict_with: ev.title || "Untitled Event",
         overlap_minutes: Math.round(overlapMinutes),
+        gap_minutes: 0,
+        new_event: newEvent.title,
+        new_start: newEvent.startISO,
+        new_end: newEvent.endISO,
+        existing_start: ev.startISO,
+        existing_end: ev.endISO,
+      };
+    } else if (overlapMinutes > -BUFFER_MIN) {
+      // Too close — gap exists but under 60 min breathing room
+      const gapMinutes = overlapMinutes < 0 ? Math.round(-overlapMinutes) : 0;
+      return {
+        conflict_detected: true,
+        conflict_type: "buffer",
+        conflict_with: ev.title || "Untitled Event",
+        overlap_minutes: 0,
+        gap_minutes: gapMinutes,
         new_event: newEvent.title,
         new_start: newEvent.startISO,
         new_end: newEvent.endISO,
@@ -209,6 +231,7 @@ function detectConflict(newEvent, existingEvents) {
   }
 
   return { conflict_detected: false };
+}
 }
 // --- Phase 3a: Register a watch on the user's calendar ---
 app.get("/watch", async (req, res) => {
@@ -413,7 +436,9 @@ app.post("/notifications", async (req, res) => {
           user_id: authUser.id,
           user_email: userEmail,
           task_name: result.new_event,
-          clash_event: `Overlaps "${result.conflict_with}" by ${result.overlap_minutes} min`,
+          clash_event: result.conflict_type === "overlap"
+  ? `Overlaps "${result.conflict_with}" by ${result.overlap_minutes} min`
+  : `Only ${result.gap_minutes} min gap before "${result.conflict_with}" — under 60 min buffer`,
           deadline: result.new_start,
           is_resolved: false,
         })
