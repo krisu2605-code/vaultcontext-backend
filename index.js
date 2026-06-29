@@ -47,11 +47,11 @@ async function sendConflictEmail(toEmail, conflict, conflictId) {
       html: `
         <div style="font-family: Arial, sans-serif; max-width: 500px; margin: 0 auto;">
           <h2 style="color: #d97706;">Calendar Conflict Detected</h2>
-          <p>Two of your events overlap:</p>
+          <p>${conflict.conflict_type === "overlap" ? "Two of your events overlap:" : "Two of your events are too close together:"}</p>
           <div style="background: #f3f4f6; border-radius: 8px; padding: 16px; margin: 16px 0;">
             <p style="margin: 0 0 8px;"><strong>${conflict.new_event}</strong><br/>
             ${formatTime(conflict.new_start)} → ${formatTime(conflict.new_end)}</p>
-            <p style="margin: 0; color: #6b7280;">overlaps with</p>
+            <p style="margin: 0; color: #6b7280;">${conflict.conflict_type === "overlap" ? "overlaps with" : "is too close to"}</p>
             <p style="margin: 8px 0 0;"><strong>${conflict.conflict_with}</strong><br/>
             ${formatTime(conflict.existing_start)} → ${formatTime(conflict.existing_end)}</p>
           </div>
