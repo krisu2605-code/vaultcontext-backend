@@ -232,7 +232,6 @@ function detectConflict(newEvent, existingEvents) {
 
   return { conflict_detected: false };
 }
-}
 // --- Phase 3a: Register a watch on the user's calendar ---
 app.get("/watch", async (req, res) => {
   const userEmail = req.query.email;
