@@ -39,7 +39,7 @@ async function sendConflictEmail(toEmail, conflict, conflictId) {
   : "https://vaultcontext.online";
 
     const { data, error } = await resend.emails.send({
-      from: "VaultContext <onboarding@resend.dev>",
+      from: "VaultContext <alerts@vaultcontext.online>",
       to: toEmail,
       subject: conflict.conflict_type === "overlap"
   ? `⚠️ Calendar Conflict: ${conflict.new_event} overlaps ${conflict.conflict_with}`
