@@ -243,7 +243,7 @@ function detectConflict(newEvent, existingEvents) {
 // --- Helper: build a Google Calendar "create event" URL suggesting a
 // non-conflicting time for the changed event. Official, documented
 // Google URL scheme — requires no API write access.
-function buildSuggestUrl(result) {
+function buildSuggestUrl(result, ownerEmail) {
   try {
     const BUFFER_MS = 60 * 60 * 1000; // 60 min breathing room
 
@@ -266,7 +266,7 @@ function buildSuggestUrl(result) {
       action: "TEMPLATE",
       text: result.new_event || "Rescheduled event",
       dates: `${fmt(suggestStart)}/${fmt(suggestEnd)}`,
-      details: `Suggested by VaultContext to resolve a conflict with "${result.conflict_with}". Remember to delete or move the original "${result.new_event}" event.`,
+      details: `Suggested by VaultContext for ${ownerEmail} to resolve a conflict with "${result.conflict_with}". Save this on that account's calendar, then delete or move the original "${result.new_event}" event.`,
     });
 
     return `https://calendar.google.com/calendar/render?${params.toString()}`;
@@ -520,7 +520,7 @@ app.post("/notifications", async (req, res) => {
   : `Only ${result.gap_minutes} min gap before "${result.conflict_with}" — under 60 min buffer`,
          deadline: result.new_start,
           is_resolved: false,
-          suggest_url: buildSuggestUrl(result),
+          suggest_url: buildSuggestUrl(result, userEmail),
         })
         .select("id")
         .single();
