@@ -240,6 +240,40 @@ function detectConflict(newEvent, existingEvents) {
 
   return { conflict_detected: false };
 }
+// --- Helper: build a Google Calendar "create event" URL suggesting a
+// non-conflicting time for the changed event. Official, documented
+// Google URL scheme — requires no API write access.
+function buildSuggestUrl(result) {
+  try {
+    const BUFFER_MS = 60 * 60 * 1000; // 60 min breathing room
+
+    // Keep the same duration as the original changed event
+    const durationMs =
+      new Date(result.new_end).getTime() - new Date(result.new_start).getTime();
+    if (isNaN(durationMs) || durationMs <= 0) return null;
+
+    // Suggest: start after the existing event ends + buffer
+    const suggestStart = new Date(
+      new Date(result.existing_end).getTime() + BUFFER_MS
+    );
+    const suggestEnd = new Date(suggestStart.getTime() + durationMs);
+
+    // Google Calendar URL format: YYYYMMDDTHHMMSSZ (UTC)
+    const fmt = (d) =>
+      d.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
+
+    const params = new URLSearchParams({
+      action: "TEMPLATE",
+      text: result.new_event || "Rescheduled event",
+      dates: `${fmt(suggestStart)}/${fmt(suggestEnd)}`,
+      details: `Suggested by VaultContext to resolve a conflict with "${result.conflict_with}". Remember to delete or move the original "${result.new_event}" event.`,
+    });
+
+    return `https://calendar.google.com/calendar/render?${params.toString()}`;
+  } catch {
+    return null; // never let suggestion failure break detection or alerts
+  }
+}
 // --- Helper: register a Google Calendar push notification watch ---
 async function registerWatch(userEmail) {
   const { oauth2Client, connection } = await getAuthedClientForUser(userEmail);
@@ -484,8 +518,9 @@ app.post("/notifications", async (req, res) => {
           clash_event: result.conflict_type === "overlap"
   ? `Overlaps "${result.conflict_with}" by ${result.overlap_minutes} min`
   : `Only ${result.gap_minutes} min gap before "${result.conflict_with}" — under 60 min buffer`,
-          deadline: result.new_start,
+         deadline: result.new_start,
           is_resolved: false,
+          suggest_url: buildSuggestUrl(result),
         })
         .select("id")
         .single();
