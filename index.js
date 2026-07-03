@@ -242,8 +242,24 @@ function detectConflict(newEvent, existingEvents) {
 }
 // --- Helper: register a Google Calendar push notification watch ---
 async function registerWatch(userEmail) {
-  const { oauth2Client } = await getAuthedClientForUser(userEmail);
-  const calendar = google.calendar({ version: "v3", auth: oauth2Client });
+  const { oauth2Client, connection } = await getAuthedClientForUser(userEmail);
+const calendar = google.calendar({ version: "v3", auth: oauth2Client });
+
+// Stop any existing watch channel first so we don't leave zombies behind
+if (connection.watch_channel_id && connection.watch_resource_id) {
+  try {
+    await calendar.channels.stop({
+      requestBody: {
+        id: connection.watch_channel_id,
+        resourceId: connection.watch_resource_id,
+      },
+    });
+    console.log("Stopped old channel:", connection.watch_channel_id);
+  } catch (stopErr) {
+    // Old channel may already be expired — that's fine, keep going
+    console.log("Old channel stop skipped:", stopErr.message);
+  }
+}
 
   const initialList = await calendar.events.list({
     calendarId: "primary",
@@ -354,10 +370,33 @@ app.post("/notifications", async (req, res) => {
     const calendar = google.calendar({ version: "v3", auth: oauth2Client });
 
     // 3. Use the stored sync token to fetch ONLY what changed.
-    const listResult = await calendar.events.list({
-      calendarId: "primary",
-      syncToken: connection.sync_token,
-    });
+    let listResult;
+    try {
+      listResult = await calendar.events.list({
+        calendarId: "primary",
+        syncToken: connection.sync_token,
+      });
+    } catch (syncErr) {
+      // Sync token expired/invalid (Google returns 410). Recover:
+      // re-baseline and wait for the next real change.
+      console.log("Sync token invalid — re-baselining for", userEmail);
+      const fresh = await calendar.events.list({
+        calendarId: "primary",
+        timeMin: new Date().toISOString(),
+        singleEvents: true,
+      });
+      if (fresh.data.nextSyncToken) {
+        await supabase
+          .from("calendar_connections")
+          .update({
+            sync_token: fresh.data.nextSyncToken,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("user_email", userEmail);
+        console.log("✅ Sync token re-baselined for", userEmail);
+      }
+      return; // skip this notification; next change flows normally
+    }
 
     const changedEvents = listResult.data.items || [];
 
