@@ -497,6 +497,24 @@ app.post("/notifications", async (req, res) => {
   console.log(`  ${result.new_event} (${result.new_start})`);
   console.log(`  overlaps ${result.conflict_with} by ${result.overlap_minutes} min`);
 
+  // Dedupe guard: skip if this exact pair already has an unresolved
+  // conflict, in either orientation (A-vs-B or B-vs-A).
+  const { data: existingRows, error: dupCheckError } = await supabase
+    .from("conflicts")
+    .select("id, task_name, conflict_with")
+    .eq("user_email", userEmail)
+    .eq("is_resolved", false);
+
+  const isDuplicate = !dupCheckError && (existingRows || []).some(r =>
+    (r.task_name === result.new_event && r.conflict_with === result.conflict_with) ||
+    (r.task_name === result.conflict_with && r.conflict_with === result.new_event)
+  );
+
+  if (isDuplicate) {
+    console.log("Duplicate pair — skipping insert & email:", result.new_event, "vs", result.conflict_with);
+    continue; // move on to the next changed event
+  }
+
   // Look up this user's auth UUID so we can save to conflicts table
   const { data: authData, error: authLookupError } = await supabase.auth.admin.listUsers();
   if (authLookupError) {
