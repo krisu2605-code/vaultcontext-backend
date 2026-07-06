@@ -539,6 +539,7 @@ app.post("/notifications", async (req, res) => {
          deadline: result.new_start,
           is_resolved: false,
           suggest_url: buildSuggestUrl(result, userEmail),
+          conflict_with: result.conflict_with,
         })
         .select("id")
         .single();
@@ -554,6 +555,35 @@ app.post("/notifications", async (req, res) => {
   }
 } else {
   console.log("✓ No conflict for", changed.summary);
+
+  // Auto-resolve: this event is now conflict-free, so clear any
+  // unresolved conflicts that involve it (in either role).
+  try {
+    const evName = changed.summary;
+    if (evName) {
+      const { data: openRows, error: openErr } = await supabase
+        .from("conflicts")
+        .select("id, task_name, conflict_with")
+        .eq("user_email", userEmail)
+        .eq("is_resolved", false);
+
+      if (!openErr && openRows) {
+        const toResolve = openRows.filter(r =>
+          r.task_name === evName || r.conflict_with === evName
+        );
+        for (const row of toResolve) {
+          await supabase
+            .from("conflicts")
+            .update({ is_resolved: true })
+            .eq("id", row.id);
+          console.log("🟢 Auto-resolved conflict id", row.id,
+            `(${row.task_name} vs ${row.conflict_with})`);
+        }
+      }
+    }
+  } catch (autoErr) {
+    console.log("Auto-resolve skipped:", autoErr.message);
+  }
 }
     }
   } catch (err) {
