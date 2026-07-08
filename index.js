@@ -72,40 +72,7 @@ async function sendConflictEmail(toEmail, conflict, conflictId) {
   } catch (err) {
     console.error("Email send exception:", err.message);
   }
-  // --- Helper: send a resolution-confirmation email ---
-async function sendResolutionEmail(toEmail, resolvedList, triggerEvent) {
-  try {
-    const count = resolvedList.length;
-    if (count === 0) return;
 
-    const subject = count === 1
-      ? `✅ Resolved: ${triggerEvent} conflict cleared`
-      : `✅ Resolved: ${count} conflicts involving ${triggerEvent}`;
-
-    const items = resolvedList.map(r =>
-      `<li style="margin:6px 0;">${r.task_name} &harr; ${r.conflict_with || "another event"}</li>`
-    ).join("");
-
-    await resend.emails.send({
-      from: "VaultContext <alerts@vaultcontext.online>",
-      to: toEmail,
-      subject,
-      html: `
-        <div style="font-family: Arial, sans-serif; max-width: 500px; margin: 0 auto;">
-          <h2 style="color: #16a34a;">Conflict Resolved</h2>
-          <p>Nice — your calendar change cleared ${count === 1 ? "this conflict" : "these conflicts"}:</p>
-          <ul style="background:#f3f4f6;border-radius:8px;padding:16px 24px;color:#111;">
-            ${items}
-          </ul>
-          <p style="color:#6b7280;">No action needed. VaultContext updated automatically when you moved "${triggerEvent}".</p>
-        </div>
-      `,
-    });
-    console.log(`✅ Resolution email sent to ${toEmail} (${count})`);
-  } catch (err) {
-    console.log("Resolution email skipped:", err.message);
-  }
-}
 }
 // --- Helper: build a fresh Google OAuth client from our env vars ---
 function makeOAuthClient() {
