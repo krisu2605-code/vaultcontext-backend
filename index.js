@@ -74,6 +74,43 @@ async function sendConflictEmail(toEmail, conflict, conflictId) {
   }
 
 }
+// --- Helper: send a resolution-confirmation email (batched, green) ---
+// Fires once after auto-resolve clears one or more conflicts, so success
+// is audible instead of silent. Self-contained: never throws.
+async function sendResolutionEmail(toEmail, resolvedRows, triggerEvent) {
+  try {
+    const count = resolvedRows.length;
+    const list = resolvedRows
+      .map((r) => `<li style="margin: 4px 0;"><strong>${r.task_name}</strong> vs <strong>${r.conflict_with}</strong></li>`)
+      .join("");
+
+    const { error } = await resend.emails.send({
+      from: "VaultContext <alerts@vaultcontext.online>",
+      to: toEmail,
+      subject: `✅ Resolved: ${count} conflict${count === 1 ? "" : "s"} involving ${triggerEvent}`,
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 500px; margin: 0 auto;">
+          <h2 style="color: #059669;">Conflict Resolved</h2>
+          <p>Your change to <strong>${triggerEvent}</strong> cleared the following conflict${count === 1 ? "" : "s"}:</p>
+          <div style="background: #f0fdf4; border-radius: 8px; padding: 16px; margin: 16px 0;">
+            <ul style="margin: 0; padding-left: 20px; color: #065f46;">
+              ${list}
+            </ul>
+          </div>
+          <p style="color: #6b7280;">No further action needed — your calendar is clear.</p>
+        </div>
+      `,
+    });
+
+    if (error) {
+      console.error("Resolution email send error:", error);
+    } else {
+      console.log("Resolution email sent to", toEmail);
+    }
+  } catch (err) {
+    console.error("Resolution email exception:", err.message);
+  }
+}
 // --- Helper: build a fresh Google OAuth client from our env vars ---
 function makeOAuthClient() {
   return new google.auth.OAuth2(
