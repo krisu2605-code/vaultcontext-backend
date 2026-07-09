@@ -385,6 +385,53 @@ app.get("/watch", async (req, res) => {
   }
 });
 
+// --- Renew watch channels nearing expiry (called by external cron) ---
+// Google watch channels expire (~1 week). Without renewal, notifications
+// silently stop. This finds connections expiring within 48h and re-registers.
+app.get("/renew-watches", async (req, res) => {
+  if (req.query.secret !== process.env.CRON_SECRET) {
+    return res.status(403).send("Forbidden");
+  }
+
+  const cutoff = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
+
+  try {
+    const { data: rows, error } = await supabase
+      .from("calendar_connections")
+      .select("user_email, watch_expiration")
+      .or(`watch_expiration.lt.${cutoff},watch_expiration.is.null`);
+
+    if (error) {
+      console.error("Renew lookup failed:", error.message);
+      return res.status(500).send("Lookup failed");
+    }
+
+    if (!rows || rows.length === 0) {
+      console.log("Renew: no channels need renewal.");
+      return res.send("Nothing to renew.");
+    }
+
+    console.log(`Renew: ${rows.length} channel(s) need renewal.`);
+
+    const results = [];
+    for (const row of rows) {
+      try {
+        await registerWatch(row.user_email);
+        console.log("🔄 Watch renewed for", row.user_email);
+        results.push(`${row.user_email}: OK`);
+      } catch (err) {
+        console.error("Renew failed for", row.user_email, "-", err.message);
+        results.push(`${row.user_email}: FAILED (${err.message})`);
+      }
+    }
+
+    res.send("Renewal run complete:\n" + results.join("\n"));
+  } catch (err) {
+    console.error("Renew endpoint exception:", err.message);
+    res.status(500).send("Renewal failed");
+  }
+});
+
 // --- Phase 4: Receive notification and fetch what changed ---
 app.post("/notifications", async (req, res) => {
   const channelId = req.headers["x-goog-channel-id"];
