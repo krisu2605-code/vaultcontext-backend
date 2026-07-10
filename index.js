@@ -425,7 +425,7 @@ app.get("/renew-watches", async (req, res) => {
       }
     }
 
-    res.send("Renewal run complete:\n" + results.join("\n"));
+    res.send(`Renewal complete: ${results.length} processed`);
   } catch (err) {
     console.error("Renew endpoint exception:", err.message);
     res.status(500).send("Renewal failed");
