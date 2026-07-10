@@ -77,7 +77,7 @@ async function sendConflictEmail(toEmail, conflict, conflictId) {
 // --- Helper: send a resolution-confirmation email (batched, green) ---
 // Fires once after auto-resolve clears one or more conflicts, so success
 // is audible instead of silent. Self-contained: never throws.
-async function sendResolutionEmail(toEmail, resolvedRows, triggerEvent) {
+async function sendResolutionEmail(toEmail, resolvedRows) {
   try {
     const count = resolvedRows.length;
     const list = resolvedRows
@@ -87,11 +87,11 @@ async function sendResolutionEmail(toEmail, resolvedRows, triggerEvent) {
     const { error } = await resend.emails.send({
       from: "VaultContext <alerts@vaultcontext.online>",
       to: toEmail,
-      subject: `✅ Resolved: ${count} conflict${count === 1 ? "" : "s"} involving ${triggerEvent}`,
+      subject: `✅ Resolved: ${count} conflict${count === 1 ? "" : "s"}`,
       html: `
         <div style="font-family: Arial, sans-serif; max-width: 500px; margin: 0 auto;">
           <h2 style="color: #059669;">Conflict Resolved</h2>
-          <p>Your change to <strong>${triggerEvent}</strong> cleared the following conflict${count === 1 ? "" : "s"}:</p>
+          <p>Your recent calendar change${count === 1 ? "" : "s"} cleared the following conflict${count === 1 ? "" : "s"}:</p>
           <div style="background: #f0fdf4; border-radius: 8px; padding: 16px; margin: 16px 0;">
             <ul style="margin: 0; padding-left: 20px; color: #065f46;">
               ${list}
@@ -530,6 +530,8 @@ app.post("/notifications", async (req, res) => {
         .eq("user_email", userEmail);
     }
 
+    const allResolved = [];
+
     // 5. For each changed event, check for conflicts.
     for (const changed of changedEvents) {
       // Skip cancelled events.
@@ -668,15 +670,17 @@ app.post("/notifications", async (req, res) => {
               `(${row.task_name} vs ${row.conflict_with})`);
           }
         }
-        if (resolvedNow.length > 0) {
-          await sendResolutionEmail(userEmail, resolvedNow, evName);
-        }
+        allResolved.push(...resolvedNow);
       }
     }
   } catch (autoErr) {
     console.log("Auto-resolve skipped:", autoErr.message);
   }
 }
+    }
+
+    if (allResolved.length > 0) {
+      await sendResolutionEmail(userEmail, allResolved);
     }
   } catch (err) {
     console.error("Error fetching changes:", err.message);
