@@ -385,6 +385,46 @@ app.get("/watch", async (req, res) => {
   }
 });
 
+// --- Account deletion request (emailed to admin for manual fulfillment) ---
+// Receives a user's email and notifies the admin to delete their data.
+// Request-based, not automated: no auth means we never delete on submit.
+app.post("/request-deletion", express.json(), async (req, res) => {
+  const email = req.body && req.body.email;
+
+  if (!email || typeof email !== "string" || !email.includes("@")) {
+    return res.status(400).json({ error: "A valid email is required." });
+  }
+
+  try {
+    const { error } = await resend.emails.send({
+      from: "VaultContext <alerts@vaultcontext.online>",
+      to: "support@vaultcontext.online",
+      subject: `🗑️ Deletion request: ${email}`,
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 500px; margin: 0 auto;">
+          <h2 style="color: #d97706;">Account Deletion Request</h2>
+          <p>A user has requested deletion of their VaultContext data.</p>
+          <p><strong>Email:</strong> ${email}</p>
+          <p><strong>Requested at:</strong> ${new Date().toISOString()}</p>
+          <p style="color: #6b7280;">Delete this user's rows from <strong>conflicts</strong> and <strong>calendar_connections</strong> in Supabase.</p>
+        </div>
+      `,
+    });
+
+    if (error) {
+      console.error("Deletion request email error:", error);
+      return res.status(500).json({ error: "Failed to submit request." });
+    }
+
+    console.log("🗑️ Deletion request received for", email);
+    res.json({ message: "Your deletion request has been received. We will remove your data shortly." });
+  } catch (err) {
+    console.error("Deletion request exception:", err.message);
+    res.status(500).json({ error: "Failed to submit request." });
+  }
+});
+
+
 // --- Renew watch channels nearing expiry (called by external cron) ---
 // Google watch channels expire (~1 week). Without renewal, notifications
 // silently stop. This finds connections expiring within 48h and re-registers.
