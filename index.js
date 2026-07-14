@@ -1,8 +1,9 @@
 const express = require("express");
 const { google } = require("googleapis");
 const { createClient } = require("@supabase/supabase-js");
-
+const cors = require("cors");
 const app = express();
+app.use(cors());
 const PORT = process.env.PORT || 3000;
 
 // --- Supabase client (uses the secret service key, server-side only) ---
