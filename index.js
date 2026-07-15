@@ -16,7 +16,9 @@ const { Resend } = require("resend");
 const resend = new Resend(process.env.RESEND_API_KEY);
 
 // --- Helper: format an ISO timestamp into a readable string ---
-function formatTime(iso) {
+// Renders in the user's own calendar timezone. Falls back to Asia/Bangkok
+// when unknown (older rows), preserving previous behavior.
+function formatTime(iso, timeZone) {
   try {
     const d = new Date(iso);
     return d.toLocaleString("en-US", {
@@ -26,14 +28,15 @@ function formatTime(iso) {
       hour: "numeric",
       minute: "2-digit",
       hour12: true,
-      timeZone: "Asia/Bangkok", // Hanoi / Vietnam time (+07:00)
+      timeZone: timeZone || "Asia/Bangkok",
     });
   } catch {
     return iso; // fall back to raw if anything goes wrong
   }
 }
+
 // --- Helper: send a conflict alert email ---
-async function sendConflictEmail(toEmail, conflict, conflictId) {
+async function sendConflictEmail(toEmail, conflict, conflictId, timeZone) {
   try {
     const resolveLink = conflictId
   ? `https://vaultcontext.online/resolve?conflictRef=${conflictId}`
@@ -51,10 +54,10 @@ async function sendConflictEmail(toEmail, conflict, conflictId) {
           <p>${conflict.conflict_type === "overlap" ? "Two of your events overlap:" : "Two of your events are too close together:"}</p>
           <div style="background: #f3f4f6; border-radius: 8px; padding: 16px; margin: 16px 0;">
             <p style="margin: 0 0 8px;"><strong>${conflict.new_event}</strong><br/>
-            ${formatTime(conflict.new_start)} → ${formatTime(conflict.new_end)}</p>
+            ${formatTime(conflict.new_start, timeZone)} → ${formatTime(conflict.new_end, timeZone)}</p>
             <p style="margin: 0; color: #6b7280;">${conflict.conflict_type === "overlap" ? "overlaps with" : "is too close to"}</p>
             <p style="margin: 8px 0 0;"><strong>${conflict.conflict_with}</strong><br/>
-            ${formatTime(conflict.existing_start)} → ${formatTime(conflict.existing_end)}</p>
+            ${formatTime(conflict.existing_start, timeZone)} → ${formatTime(conflict.existing_end, timeZone)}</p>
           </div>
           <p style="color: #6b7280;">${conflict.conflict_type === "overlap"
   ? `Overlap: <strong>${conflict.overlap_minutes} minutes</strong>`
@@ -655,12 +658,12 @@ app.post("/notifications", async (req, res) => {
   const { data: authData, error: authLookupError } = await supabase.auth.admin.listUsers();
   if (authLookupError) {
     console.error("Auth user lookup failed:", authLookupError.message);
-    await sendConflictEmail(userEmail, result, null);
+    await sendConflictEmail(userEmail, result, null, connection.timezone);
   } else {
     const authUser = authData?.users?.find(u => u.email === userEmail);
     if (!authUser) {
       console.error("No auth user found for email:", userEmail);
-      await sendConflictEmail(userEmail, result, null);
+      await sendConflictEmail(userEmail, result, null, connection.timezone);
     } else {
       // Save conflict to DB and capture the generated id
       const { data: inserted, error: insertError } = await supabase
@@ -682,10 +685,10 @@ app.post("/notifications", async (req, res) => {
 
       if (insertError) {
         console.error("Failed to save conflict to DB:", insertError.message);
-        await sendConflictEmail(userEmail, result, null);
+        await sendConflictEmail(userEmail, result, null, connection.timezone);
       } else {
         console.log("✅ Conflict saved to DB, id:", inserted.id);
-        await sendConflictEmail(userEmail, result, inserted.id);
+        await sendConflictEmail(userEmail, result, inserted.id, connection.timezone);
       }
     }
   }
