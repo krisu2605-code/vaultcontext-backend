@@ -341,6 +341,18 @@ if (connection.watch_channel_id && connection.watch_resource_id) {
   });
   const syncToken = initialList.data.nextSyncToken;
 
+  // Capture the user's calendar timezone (IANA name, e.g. "Asia/Manila")
+  // so alert emails render times in THEIR timezone, not the server's.
+  // Self-contained: a timezone lookup must never break watch registration.
+  let userTimezone = null;
+  try {
+    const tzResponse = await calendar.settings.get({ setting: "timezone" });
+    userTimezone = tzResponse.data.value || null;
+    console.log("Timezone for", userEmail, "→", userTimezone);
+  } catch (tzErr) {
+    console.log("Timezone lookup skipped for", userEmail, "-", tzErr.message);
+  }
+
   const channelId = "vc-" + Date.now() + "-" + Math.floor(Math.random() * 100000);
 
   const watchResponse = await calendar.events.watch({
@@ -361,6 +373,7 @@ if (connection.watch_channel_id && connection.watch_resource_id) {
         ? new Date(Number(watchResponse.data.expiration)).toISOString()
         : null,
       sync_token: syncToken,
+      timezone: userTimezone,
       updated_at: new Date().toISOString(),
     })
     .eq("user_email", userEmail);
