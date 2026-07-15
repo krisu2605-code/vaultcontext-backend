@@ -343,15 +343,10 @@ if (connection.watch_channel_id && connection.watch_resource_id) {
 
   // Capture the user's calendar timezone (IANA name, e.g. "Asia/Manila")
   // so alert emails render times in THEIR timezone, not the server's.
-  // Self-contained: a timezone lookup must never break watch registration.
-  let userTimezone = null;
-  try {
-    const tzResponse = await calendar.settings.get({ setting: "timezone" });
-    userTimezone = tzResponse.data.value || null;
-    console.log("Timezone for", userEmail, "→", userTimezone);
-  } catch (tzErr) {
-    console.log("Timezone lookup skipped for", userEmail, "-", tzErr.message);
-  }
+  // Read from the events.list response we already made — the calendar's
+  // timeZone ships with events.readonly, so no extra scope or API call.
+  const userTimezone = initialList.data.timeZone || null;
+  console.log("Timezone for", userEmail, "→", userTimezone);
 
   const channelId = "vc-" + Date.now() + "-" + Math.floor(Math.random() * 100000);
 
