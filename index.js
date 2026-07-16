@@ -42,6 +42,11 @@ async function sendConflictEmail(toEmail, conflict, conflictId, timeZone) {
   ? `https://vaultcontext.online/resolve?conflictRef=${conflictId}`
   : "https://vaultcontext.online";
 
+    // Send users straight to Google Calendar with a conflict-free time
+    // pre-filled. Falls back to the in-app page if the suggestion fails.
+    const suggestUrl = buildSuggestUrl(conflict, toEmail);
+    const buttonUrl = suggestUrl || resolveLink;
+
     const { data, error } = await resend.emails.send({
       from: "VaultContext <alerts@vaultcontext.online>",
       to: toEmail,
@@ -63,7 +68,7 @@ async function sendConflictEmail(toEmail, conflict, conflictId, timeZone) {
   ? `Overlap: <strong>${conflict.overlap_minutes} minutes</strong>`
   : `Gap: <strong>${conflict.gap_minutes} min</strong> — under 60 min breathing room`
 }</p>
-          <a href="${resolveLink}" style="display: inline-block; background: #2563eb; color: white; padding: 10px 20px; border-radius: 6px; text-decoration: none; margin-top: 8px;">Resolve Conflict</a>
+          <a href="${buttonUrl}" style="display: inline-block; background: #2563eb; color: white; padding: 10px 20px; border-radius: 6px; text-decoration: none; margin-top: 8px;">Tap to Reschedule</a>
         </div>
       `,
     });
