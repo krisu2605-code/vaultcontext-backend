@@ -234,7 +234,7 @@ function detectConflict(newEvent, existingEvents) {
     return { conflict_detected: false, error: "Invalid new event timestamps" };
   }
 
-  const OVERLAP_MIN = 30; // actual overlap threshold (minutes)
+ 
   const BUFFER_MIN = 60;  // minimum breathing room between events (minutes)
 
   for (const ev of existingEvents) {
@@ -248,8 +248,8 @@ function detectConflict(newEvent, existingEvents) {
     const overlapEnd = Math.min(newEnd, evEnd);
     const overlapMinutes = (overlapEnd - overlapStart) / (1000 * 60);
 
-    if (overlapMinutes >= OVERLAP_MIN) {
-      // Real overlap of 30+ min
+    if (overlapMinutes > 0) {
+      // Real overlap: events genuinely intersect
       return {
         conflict_detected: true,
         conflict_type: "overlap",
@@ -634,7 +634,9 @@ app.post("/notifications", async (req, res) => {
       if (result.conflict_detected) {
   console.log("⚠️ CONFLICT DETECTED!");
   console.log(`  ${result.new_event} (${result.new_start})`);
-  console.log(`  overlaps ${result.conflict_with} by ${result.overlap_minutes} min`);
+  console.log(result.conflict_type === "overlap"
+    ? `  overlaps ${result.conflict_with} by ${result.overlap_minutes} min`
+    : `  is ${result.gap_minutes} min before ${result.conflict_with}`);
 
   // Dedupe guard: skip if this exact pair already has an unresolved
   // conflict, in either orientation (A-vs-B or B-vs-A).
