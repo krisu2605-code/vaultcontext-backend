@@ -262,6 +262,7 @@ function detectConflict(newEvent, existingEvents) {
         overlap_minutes: Math.round(overlapMinutes),
         gap_minutes: 0,
         new_event: newEvent.title,
+        new_location: newEvent.location || null,
         new_start: newEvent.startISO,
         new_end: newEvent.endISO,
         existing_start: ev.startISO,
@@ -277,6 +278,7 @@ function detectConflict(newEvent, existingEvents) {
         overlap_minutes: 0,
         gap_minutes: gapMinutes,
         new_event: newEvent.title,
+        new_location: newEvent.location || null,
         new_start: newEvent.startISO,
         new_end: newEvent.endISO,
         existing_start: ev.startISO,
@@ -314,7 +316,13 @@ function buildSuggestUrl(result, ownerEmail) {
       text: result.new_event || "Rescheduled event",
       dates: `${fmt(suggestStart)}/${fmt(suggestEnd)}`,
       details: `Suggested by VaultContext for ${ownerEmail} to resolve a conflict with "${result.conflict_with}". Save this on that account's calendar, then delete or move the original "${result.new_event}" event.`,
-    });
+   });
+
+    // Carry the original event's location if it had one. Conditional:
+    // URLSearchParams would serialize undefined as the string "undefined".
+    if (result.new_location) {
+      params.set("location", result.new_location);
+    }
 
     return `https://calendar.google.com/calendar/render?${params.toString()}`;
   } catch {
@@ -622,6 +630,7 @@ app.post("/notifications", async (req, res) => {
       const existingEvents = (nearby.data.items || []).map((ev) => ({
         id: ev.id,
         title: ev.summary,
+        location: ev.location || null,
         startISO: ev.start ? ev.start.dateTime || ev.start.date : null,
         endISO: ev.end ? ev.end.dateTime || ev.end.date : null,
       }));
@@ -629,6 +638,7 @@ app.post("/notifications", async (req, res) => {
       const newEvent = {
         id: changed.id,
         title: changed.summary,
+        location: changed.location || null,
         startISO: changedStart,
         endISO: changedEnd,
       };
