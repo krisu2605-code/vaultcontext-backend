@@ -602,6 +602,14 @@ app.post("/notifications", async (req, res) => {
       // Skip cancelled events.
       if (changed.status === "cancelled") continue;
 
+      // Skip all-day events. Google gives them start.date (a bare date, no
+      // time) instead of start.dateTime. They're context, not commitments —
+      // "Vacation" doesn't conflict with a 2pm meeting. Parsing the bare
+      // date would also treat it as midnight UTC (a phantom 7am in Hanoi).
+      if (!changed.start || !changed.start.dateTime) {
+        console.log("Skipping all-day event:", changed.summary);
+        continue;
+      }
       // Get the changed event's start/end in ISO form.
       const changedStart = changed.start
         ? changed.start.dateTime || changed.start.date
@@ -627,13 +635,15 @@ app.post("/notifications", async (req, res) => {
       });
 
       // Shape the events for the engine.
-      const existingEvents = (nearby.data.items || []).map((ev) => ({
-        id: ev.id,
-        title: ev.summary,
-        location: ev.location || null,
-        startISO: ev.start ? ev.start.dateTime || ev.start.date : null,
-        endISO: ev.end ? ev.end.dateTime || ev.end.date : null,
-      }));
+      const existingEvents = (nearby.data.items || [])
+        .filter((ev) => ev.start && ev.start.dateTime)
+        .map((ev) => ({
+          id: ev.id,
+          title: ev.summary,
+          location: ev.location || null,
+          startISO: ev.start.dateTime,
+          endISO: ev.end ? ev.end.dateTime : null,
+        }));
 
       const newEvent = {
         id: changed.id,
