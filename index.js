@@ -14,7 +14,9 @@ const supabase = createClient(
 // --- Resend email client ---
 const { Resend } = require("resend");
 const resend = new Resend(process.env.RESEND_API_KEY);
-
+// --- ElevenLabs voice client ---
+const { ElevenLabsClient } = require("@elevenlabs/elevenlabs-js");
+const elevenlabs = new ElevenLabsClient({ apiKey: process.env.ELEVENLABS_API_KEY });
 // --- Helper: format an ISO timestamp into a readable string ---
 // Renders in the user's own calendar timezone. Falls back to Asia/Bangkok
 // when unknown (older rows), preserving previous behavior.
@@ -47,6 +49,23 @@ async function sendConflictEmail(toEmail, conflict, conflictId, timeZone) {
     const suggestUrl = buildSuggestUrl(conflict, toEmail);
     const buttonUrl = suggestUrl || resolveLink;
 
+// Generate voice alert (defensive: never let TTS break the email)
+    let audioAttachment = null;
+    try {
+      const spokenText = conflict.conflict_type === "overlap"
+        ? `Calendar conflict. ${conflict.new_event} overlaps ${conflict.conflict_with} by ${conflict.overlap_minutes} minutes.`
+        : `Tight schedule. ${conflict.new_event} has only ${conflict.gap_minutes} minutes before ${conflict.conflict_with}.`;
+      const audio = await elevenlabs.textToSpeech.convert("JBFqnCBsd6RMkjVDRZzb", {
+        text: spokenText,
+        modelId: "eleven_multilingual_v2",
+      });
+      const chunks = [];
+      for await (const chunk of audio) chunks.push(chunk);
+      audioAttachment = { filename: "conflict-alert.mp3", content: Buffer.concat(chunks) };
+    } catch (ttsErr) {
+      console.error("TTS generation failed (email will still send):", ttsErr);
+    }
+
     const { data, error } = await resend.emails.send({
       from: "VaultContext <alerts@vaultcontext.online>",
       to: toEmail,
@@ -71,6 +90,7 @@ async function sendConflictEmail(toEmail, conflict, conflictId, timeZone) {
           <a href="${buttonUrl}" style="display: inline-block; background: #2563eb; color: white; padding: 10px 20px; border-radius: 6px; text-decoration: none; margin-top: 8px;">Tap to Reschedule</a>
         </div>
       `,
+      attachments: audioAttachment ? [audioAttachment] : [],
     });
 
     if (error) {
