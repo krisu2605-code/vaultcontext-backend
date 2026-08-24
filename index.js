@@ -36,6 +36,25 @@ function formatTime(iso, timeZone) {
     return iso; // fall back to raw if anything goes wrong
   }
 }
+// --- Helper: format a time for SPOKEN alerts --- (voice reads "9 a.m" better than "9:00 AM"). Keeps minutes for :30, :45, etc. ---
+function speakTime(iso, timeZone) {
+  try {
+    const d = new Date(iso);
+    let t = d.toLocaleString("en-US", {
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+      timeZone: timeZone || "Asia/Bangkok",
+    });
+    // "9:00 AM" -> "9 AM", 9:30 AM" stays "9:30 AM"
+    t = t.replace(":00", "");
+    // "AM"/"PM" -> "a.m"/"p.m" so the voice pronounces it cleanly
+    t =t.replace("AM", "a.m").replace("PM", "p.m");
+    return t;
+  } catch {
+    return iso;
+  }
+}
 
 // --- Helper: send a conflict alert email ---
 async function sendConflictEmail(toEmail, conflict, conflictId, timeZone) {
@@ -50,21 +69,44 @@ async function sendConflictEmail(toEmail, conflict, conflictId, timeZone) {
     const buttonUrl = suggestUrl || resolveLink;
 
 // Generate voice alert (defensive: never let TTS break the email)
-    let audioAttachment = null;
-    try {
-      const spokenText = conflict.conflict_type === "overlap"
-        ? `Calendar conflict. ${conflict.new_event} overlaps ${conflict.conflict_with} by ${conflict.overlap_minutes} minutes.`
-        : `Tight schedule. ${conflict.new_event} has only ${conflict.gap_minutes} minutes before ${conflict.conflict_with}.`;
-      const audio = await elevenlabs.textToSpeech.convert("JBFqnCBsd6RMkjVDRZzb", {
-        text: spokenText,
-        modelId: "eleven_multilingual_v2",
-      });
-      const chunks = [];
-      for await (const chunk of audio) chunks.push(chunk);
-      audioAttachment = { filename: "conflict-alert.mp3", content: Buffer.concat(chunks) };
-    } catch (ttsErr) {
-      console.error("TTS generation failed (email will still send):", ttsErr);
-    }
+let audioAttachment = null;
+try {
+  let spokenText;
+
+  if (conflict.conflict_type === "overlap") {
+    // Read the earlier event first, so the voice narrates chronologically
+    const newStartsFirst =
+      new Date(conflict.new_start) <= new Date(conflict.existing_start);
+
+    const firstName  = newStartsFirst ? conflict.new_event    : conflict.conflict_with;
+    const firstStart = newStartsFirst ? conflict.new_start    : conflict.existing_start;
+    const firstEnd   = newStartsFirst ? conflict.new_end      : conflict.existing_end;
+    const secondName  = newStartsFirst ? conflict.conflict_with : conflict.new_event;
+    const secondStart = newStartsFirst ? conflict.existing_start : conflict.new_start;
+    const secondEnd   = newStartsFirst ? conflict.existing_end   : conflict.new_end;
+
+    spokenText =
+      `Calendar conflict. ${firstName} runs from ${speakTime(firstStart, timezone)} ` +
+      `to ${speakTime(firstEnd, timeZone)}, and ${secondName} runs from ` +
+      `${speakTime(secondStart, timeZone)} to ${speakTime(secondEnd, timeZone)}. ` +
+      `They overlap by ${conflict.overlap_minutes} minutes.`;
+  } else {
+    spokenText =
+      `Tight schedule. ${conflict.new_event} at ${speakTime(conflict.new_start, timeZone)} ` +
+      `has only ${conflict.gap_minutes} minutes before ${conflict.conflict_with} ` +
+      `at ${speakTime(conflict.existing_start, timeZone)}.`;
+  }
+
+  const audio = await elevenlabs.textToSpeech.convert("JBFqnCBsd6RMkjVDRZzb", {
+    text: spokenText,
+    modelId: "eleven_multilingual_v2",
+  });
+  const chunks = [];
+  for await (const chunk of audio) chunks.push(chunk);
+  audioAttachment = { filename: "conflict-alert.mp3", content: Buffer.concat(chunks) };
+} catch (ttsErr) {
+  console.error("TTS generation failed (email will still send):", ttsErr);
+}
 
     const { data, error } = await resend.emails.send({
       from: "VaultContext <alerts@vaultcontext.online>",
