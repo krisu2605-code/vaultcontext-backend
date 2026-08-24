@@ -86,7 +86,7 @@ try {
     const secondEnd   = newStartsFirst ? conflict.existing_end   : conflict.new_end;
 
     spokenText =
-      `Calendar conflict. ${firstName} runs from ${speakTime(firstStart, timezone)} ` +
+      `Calendar conflict. ${firstName} runs from ${speakTime(firstStart, timeZone)} ` +
       `to ${speakTime(firstEnd, timeZone)}, and ${secondName} runs from ` +
       `${speakTime(secondStart, timeZone)} to ${speakTime(secondEnd, timeZone)}. ` +
       `They overlap by ${conflict.overlap_minutes} minutes.`;
