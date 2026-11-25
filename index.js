@@ -198,9 +198,49 @@ const SCOPES = [
   "https://www.googleapis.com/auth/userinfo.email",
 ];
 
-// --- Health check ---
+// --- Public landing page (homepage) ---
 app.get("/", (req, res) => {
-  res.send("VaultContext backend is live.");
+  res.type("html").send(`<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VaultContext — Calendar conflict detection</title>
+<style>
+  body{margin:0;font-family:Arial,Helvetica,sans-serif;color:#1f2430;background:#f7f7fb;line-height:1.6}
+  .wrap{max-width:760px;margin:0 auto;padding:48px 24px}
+  .logo{width:56px;height:56px;border-radius:14px;background:#5B4AE8;display:inline-block}
+  h1{font-size:34px;margin:20px 0 8px}
+  .lead{font-size:19px;color:#4b5160}
+  .card{background:#fff;border-radius:12px;padding:24px;margin:24px 0;box-shadow:0 1px 4px rgba(0,0,0,.06)}
+  ul{padding-left:20px}li{margin:8px 0}
+  .btn{display:inline-block;background:#5B4AE8;color:#fff;text-decoration:none;padding:12px 22px;border-radius:8px;margin-top:8px}
+  .note{color:#5f6675;font-size:15px}
+  a{color:#5B4AE8}
+  footer{margin-top:32px;font-size:14px;color:#8a909c}
+</style></head>
+<body><div class="wrap">
+  <span class="logo"></span>
+  <h1>VaultContext</h1>
+  <p class="lead">Catch double-bookings and tight gaps in your Google Calendar before they cost you.</p>
+
+  <div class="card">
+    <p>VaultContext watches your Google Calendar and alerts you by email when two events overlap, or when back-to-back bookings leave too little time between them. It's built for people who manage busy, shared calendars — clinics, studios, tutoring centers, and coordinators — where a double-booking means a client waits or walks.</p>
+    <ul>
+      <li>Automatic detection of overlapping events and tight buffer gaps</li>
+      <li>Email alerts the moment a conflict appears</li>
+      <li>One-tap reschedule that opens the event in Google Calendar</li>
+      <li><strong>Read-only by design</strong> — VaultContext only reads calendar events to detect conflicts. It never creates, edits, or deletes anything on your calendar.</li>
+    </ul>
+    <a class="btn" href="https://vaultcontext.online">Open the app</a>
+  </div>
+
+  <p class="note">VaultContext uses read-only access to your Google Calendar events (calendar.events.readonly) solely to detect scheduling conflicts and notify you.</p>
+
+  <footer>
+    <a href="https://vaultcontext.online/privacy">Privacy Policy</a> ·
+    <a href="https://vaultcontext.online/terms">Terms of Service</a> ·
+    Contact: support@vaultcontext.online
+  </footer>
+</div></body></html>`);
 });
 // --- Google Search Console domain verification ---
 app.get("/googlef37a6fa844dbf8cc.html", (req, res) => {
