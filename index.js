@@ -202,6 +202,11 @@ const SCOPES = [
 app.get("/", (req, res) => {
   res.send("VaultContext backend is live.");
 });
+// --- Google Search Console domain verification ---
+app.get("/googlef37a6fa844dbf8cc.html", (req, res) => {
+  res.type("text/html");
+  res.send("google-site-verification: googlef37a6fa844dbf8cc.html");
+});
 
 // --- Step 1: send the user to Google to authorize ---
 app.get("/connect", (req, res) => {
